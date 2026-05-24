@@ -256,20 +256,16 @@ class _RefereeScreenState extends State<RefereeScreen> {
     final mvpAText = mvpA.text.trim();
     final mvpBText = mvpB.text.trim();
 
-    final alreadyFinalized = (d['status'] ?? '').toString() == 'finalizado';
-
-    if (!alreadyFinalized) {
-      await service.finalizeMatchStats(
-        teamA: teamAName,
-        teamB: teamBName,
-        scoreA: scoreA,
-        scoreB: scoreB,
-        scorersA: scorersA,
-        scorersB: scorersB,
-        mvpA: mvpAText,
-        mvpB: mvpBText,
-      );
-    }
+    await service.finalizeMatchStats(
+      teamA: teamAName,
+      teamB: teamBName,
+      scoreA: scoreA,
+      scoreB: scoreB,
+      scorersA: scorersA,
+      scorersB: scorersB,
+      mvpA: mvpAText,
+      mvpB: mvpBText,
+    );
 
     await service.updateMatch(id, {
       'status': 'finalizado',
