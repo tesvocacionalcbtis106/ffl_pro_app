@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "125173837995",
+    "project_id": "ffl-pro-app",
+    "storage_bucket": "ffl-pro-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:125173837995:android:a1bec19ccaa9d436c707ee",
+        "android_client_info": {
+          "package_name": "com.example.ffl_pro_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1KuH86TtB80XWTnqNZlXxe2HMCz22HLQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
