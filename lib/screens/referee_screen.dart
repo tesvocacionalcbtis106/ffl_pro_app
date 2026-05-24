@@ -224,11 +224,53 @@ class _RefereeScreenState extends State<RefereeScreen> {
     }
   }
 
+
+  List<String> _extractScorerNames(dynamic rawScorers) {
+    if (rawScorers is! List) return const [];
+
+    return rawScorers.map((e) {
+      if (e is String) return e;
+      if (e is Map) {
+        final name = e['name'];
+        return name?.toString() ?? '';
+      }
+      return '';
+    }).where((name) => name.isNotEmpty).cast<String>().toList();
+  }
+
   Future<void> _finalizeMatch(String id) async {
+    final doc = await FirebaseFirestore.instance
+        .collection('matches')
+        .doc(id)
+        .get();
+
+    final d = doc.data();
+    if (d == null) return;
+
+    final teamAName = (d['teamA'] ?? '').toString();
+    final teamBName = (d['teamB'] ?? '').toString();
+    final scoreA = _safeInt(d, 'scoreA');
+    final scoreB = _safeInt(d, 'scoreB');
+    final scorersA = (d['scorersA'] as List?)?.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList() ?? <Map<String, dynamic>>[];
+    final scorersB = (d['scorersB'] as List?)?.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList() ?? <Map<String, dynamic>>[];
+    final mvpAText = mvpA.text.trim();
+    final mvpBText = mvpB.text.trim();
+
+    await service.finalizeMatchStats(
+      teamA: teamAName,
+      teamB: teamBName,
+      scoreA: scoreA,
+      scoreB: scoreB,
+      scorersA: scorersA,
+      scorersB: scorersB,
+      mvpA: mvpAText,
+      mvpB: mvpBText,
+    );
+
     await service.updateMatch(id, {
       'status': 'finalizado',
-      'mvpA': mvpA.text.trim(),
-      'mvpB': mvpB.text.trim(),
+      'mvpA': mvpAText,
+      'mvpB': mvpBText,
     });
 
     _stopTimer();
@@ -287,10 +329,8 @@ class _RefereeScreenState extends State<RefereeScreen> {
           final scoreA = _safeInt(d, 'scoreA');
           final scoreB = _safeInt(d, 'scoreB');
 
-          final scorersA =
-              List<String>.from(d['scorersA'] ?? []);
-          final scorersB =
-              List<String>.from(d['scorersB'] ?? []);
+          final scorersA = _extractScorerNames(d['scorersA']);
+          final scorersB = _extractScorerNames(d['scorersB']);
 
           return Padding(
             padding: const EdgeInsets.all(16),

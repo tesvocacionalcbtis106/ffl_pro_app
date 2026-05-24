@@ -140,11 +140,9 @@ class FirestoreService {
       for (final pDoc in playersQuery.docs) {
         final pData = pDoc.data();
         final currentPoints = _safeInt(pData['points'], fallback: 0);
-        final currentMatchesPlayed = _safeInt(pData['matchesPlayed'], fallback: 0);
 
         tx.update(pDoc.reference, {
           'points': currentPoints + pts,
-          'matchesPlayed': currentMatchesPlayed + 1,
         });
       }
     });
@@ -229,9 +227,21 @@ class FirestoreService {
       });
     }
 
-    // Keep match-level MVP fields consistent (no player stat increments here).
-    // This method intentionally does NOT modify players.
-    // Variables kept to match signature / future-proofing.
+
+    final allPlayers = await _db.collection('players').get();
+    final teamPlayers = allPlayers.docs.where((pDoc) {
+      final pData = pDoc.data();
+      final pTeam = (pData['team'] ?? '').toString();
+      return pTeam == teamA || pTeam == teamB;
+    });
+
+    for (final pDoc in teamPlayers) {
+      final pData = pDoc.data();
+      final currentMatchesPlayed = _safeInt(pData['matchesPlayed'], fallback: 0);
+      await pDoc.reference.update({
+        'matchesPlayed': currentMatchesPlayed + 1,
+      });
+    }
 
   }
 
