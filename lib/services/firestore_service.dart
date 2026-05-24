@@ -5,6 +5,55 @@ import '../models/match.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  void debugFirestorePayload(dynamic data, {String context = ''}) {
+    void walk(dynamic value, String path) {
+      final typeName = value.runtimeType.toString();
+
+      final isPrimitive = value == null ||
+          value is String ||
+          value is int ||
+          value is double ||
+          value is bool ||
+          value is Timestamp ||
+          value is GeoPoint ||
+          value is FieldValue ||
+          value is DocumentReference;
+
+      if (isPrimitive) return;
+      if (value is DateTime || value is num) return;
+
+      if (value is Map) {
+        for (final entry in value.entries) {
+          walk(entry.value, '$path.${entry.key}');
+        }
+        return;
+      }
+
+      if (value is Iterable) {
+        var i = 0;
+        for (final item in value) {
+          walk(item, '$path[$i]');
+          i++;
+        }
+        return;
+      }
+
+      try {
+        final dynamic dyn = value;
+        final dynamic mapped = dyn.toMap();
+        walk(mapped, '$path.toMap()');
+        return;
+      } catch (_) {
+        print(
+          '[FirestoreService][InvalidType] '
+          'context=$context path=$path type=$typeName value=$value',
+        );
+      }
+    }
+
+    walk(data, r'$');
+  }
+
   dynamic _toFirestoreValue(dynamic value) {
     if (value == null ||
         value is String ||
@@ -55,12 +104,22 @@ class FirestoreService {
     return out;
   }
 
+  Map<String, dynamic> _sanitizeAndDebugFirestoreMap(
+    Map<String, dynamic> input, {
+    required String context,
+  }) {
+    debugFirestorePayload(input, context: context);
+    return _sanitizeFirestoreMap(input);
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> getTeams() {
     return _db.collection('teams').snapshots();
   }
 
   Future<void> addTeam(Map<String, dynamic> team) async {
-    await _db.collection('teams').add(team);
+    await _db.collection('teams').add(
+      _sanitizeAndDebugFirestoreMap(team, context: 'addTeam'),
+    );
   }
 
   Future<void> deleteAllTeams() async {
@@ -75,7 +134,9 @@ class FirestoreService {
   }
 
   Future<void> addPlayer(Map<String, dynamic> player) async {
-    await _db.collection('players').add(player);
+    await _db.collection('players').add(
+      _sanitizeAndDebugFirestoreMap(player, context: 'addPlayer'),
+    );
   }
 
   Future<void> deleteAllPlayers() async {
@@ -99,7 +160,9 @@ class FirestoreService {
   }
 
   Future<void> addMatch(MatchModel match) async {
-    await _db.collection('matches').add(match.toMap());
+    await _db.collection('matches').add(
+      _sanitizeAndDebugFirestoreMap(match.toMap(), context: 'addMatch'),
+    );
   }
 
   Future<void> updateMatch(
@@ -109,7 +172,7 @@ class FirestoreService {
     await _db
         .collection('matches')
         .doc(id)
-        .update(_sanitizeFirestoreMap(data));
+        .update(_sanitizeAndDebugFirestoreMap(data, context: 'updateMatch'));
   }
 
   Future<void> deleteMatch(String id) async {
@@ -203,12 +266,12 @@ class FirestoreService {
         newScorersB.add(scorerEntry);
       }
 
-      tx.update(matchRef, _sanitizeFirestoreMap({
+      tx.update(matchRef, _sanitizeAndDebugFirestoreMap({
         'scoreA': newScoreA,
         'scoreB': newScoreB,
         'scorersA': newScorersA,
         'scorersB': newScorersB,
-      }));
+      }, context: 'registerScoringEvent:matchUpdate'));
 
       // Update player stats by name (same pattern already used elsewhere).
       final playersQuery = await _db
@@ -220,9 +283,9 @@ class FirestoreService {
         final pData = pDoc.data();
         final currentPoints = _safeInt(pData['points'], fallback: 0);
 
-        tx.update(pDoc.reference, _sanitizeFirestoreMap({
+        tx.update(pDoc.reference, _sanitizeAndDebugFirestoreMap({
           'points': currentPoints + pts,
-        }));
+        }, context: 'registerScoringEvent:playerUpdate'));
       }
     });
   }
@@ -238,9 +301,9 @@ class FirestoreService {
     final matchRef = _db.collection('matches').doc(matchId);
 
     await _db.runTransaction((tx) async {
-      tx.update(matchRef, _sanitizeFirestoreMap({
+      tx.update(matchRef, _sanitizeAndDebugFirestoreMap({
         isTeamA ? 'mvpA' : 'mvpB': name,
-      }));
+      }, context: 'assignMVP:matchUpdate'));
 
       final playersQuery = await _db
           .collection('players')
@@ -250,9 +313,9 @@ class FirestoreService {
       for (final pDoc in playersQuery.docs) {
         final pData = pDoc.data();
         final current = _safeInt(pData['mvps'], fallback: 0);
-        tx.update(pDoc.reference, _sanitizeFirestoreMap({
+        tx.update(pDoc.reference, _sanitizeAndDebugFirestoreMap({
           'mvps': current + 1,
-        }));
+        }, context: 'assignMVP:playerUpdate'));
       }
     });
   }
@@ -295,7 +358,7 @@ class FirestoreService {
       final played = currentPlayed + 1;
       final won = isA ? scoreA > scoreB : scoreB > scoreA;
 
-      await doc.reference.update({
+      await doc.reference.update(_sanitizeAndDebugFirestoreMap({
         'played': played,
         'wins': currentWins + (won ? 1 : 0),
         'losses': currentLosses + (won ? 0 : 1),
@@ -303,7 +366,7 @@ class FirestoreService {
         'pointsAgainst': pa,
         'diff': pf - pa,
         'tablePoints': currentTablePoints + (won ? 3 : 1),
-      });
+      }, context: 'finalizeMatchStats:teamUpdate'));
     }
 
 
@@ -317,9 +380,9 @@ class FirestoreService {
     for (final pDoc in teamPlayers) {
       final pData = pDoc.data();
       final currentMatchesPlayed = _safeInt(pData['matchesPlayed'], fallback: 0);
-      await pDoc.reference.update({
+      await pDoc.reference.update(_sanitizeAndDebugFirestoreMap({
         'matchesPlayed': currentMatchesPlayed + 1,
-      });
+      }, context: 'finalizeMatchStats:playerUpdate'));
     }
 
   }
@@ -334,16 +397,16 @@ class FirestoreService {
     print("TEAMS: ${teams.docs.length}");
 
     for (final doc in players.docs) {
-      await doc.reference.set({
+      await doc.reference.set(_sanitizeAndDebugFirestoreMap({
         ...doc.data(),
         'matchesPlayed': doc.data()['matchesPlayed'] ?? 0,
         'mvps': doc.data()['mvps'] ?? 0,
         'points': doc.data()['points'] ?? 0,
-      }, SetOptions(merge: true));
+      }, context: 'migrateDatabase:playerSet'), SetOptions(merge: true));
     }
 
     for (final doc in teams.docs) {
-      await doc.reference.set({
+      await doc.reference.set(_sanitizeAndDebugFirestoreMap({
         'name': doc.data()['name'],
         'played': 0,
         'wins': 0,
@@ -352,7 +415,7 @@ class FirestoreService {
         'pointsAgainst': 0,
         'diff': 0,
         'tablePoints': 0,
-      });
+      }, context: 'migrateDatabase:teamSet'));
     }
 
     print("MIGRACION COMPLETA");
