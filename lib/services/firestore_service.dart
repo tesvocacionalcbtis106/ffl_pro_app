@@ -5,6 +5,56 @@ import '../models/match.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  dynamic _toFirestoreValue(dynamic value) {
+    if (value == null ||
+        value is String ||
+        value is int ||
+        value is double ||
+        value is bool ||
+        value is Timestamp ||
+        value is GeoPoint ||
+        value is FieldValue ||
+        value is DocumentReference) {
+      return value;
+    }
+
+    if (value is num) return value.toDouble();
+
+    if (value is DateTime) return Timestamp.fromDate(value);
+
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      for (final entry in value.entries) {
+        out[entry.key.toString()] = _toFirestoreValue(entry.value);
+      }
+      return out;
+    }
+
+    if (value is Iterable) {
+      return value.map(_toFirestoreValue).toList();
+    }
+
+    if (value is MatchModel) return _toFirestoreValue(value.toMap());
+
+    try {
+      final dynamic dyn = value;
+      final dynamic mapped = dyn.toMap();
+      if (mapped is Map) return _toFirestoreValue(mapped);
+    } catch (_) {
+      // Fallback to string representation when no serializable shape is available.
+    }
+
+    return value.toString();
+  }
+
+  Map<String, dynamic> _sanitizeFirestoreMap(Map<String, dynamic> input) {
+    final out = <String, dynamic>{};
+    for (final entry in input.entries) {
+      out[entry.key] = _toFirestoreValue(entry.value);
+    }
+    return out;
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> getTeams() {
     return _db.collection('teams').snapshots();
   }
@@ -56,7 +106,10 @@ class FirestoreService {
     String id,
     Map<String, dynamic> data,
   ) async {
-    await _db.collection('matches').doc(id).update(data);
+    await _db
+        .collection('matches')
+        .doc(id)
+        .update(_sanitizeFirestoreMap(data));
   }
 
   Future<void> deleteMatch(String id) async {
@@ -112,13 +165,26 @@ class FirestoreService {
       };
 
       Map<String, dynamic>? normalizeScorerEntry(dynamic e) {
-        if (e is Map) return e.cast<String, dynamic>();
+        if (e is Map) {
+          return _sanitizeFirestoreMap(
+            e.map((k, v) => MapEntry(k.toString(), v)),
+          );
+        }
         if (e is String && e.trim().isNotEmpty) {
           return {
             'name': e.trim(),
             'points': 0,
           };
         }
+        try {
+          final dynamic dyn = e;
+          final dynamic mapped = dyn.toMap();
+          if (mapped is Map) {
+            return _sanitizeFirestoreMap(
+              mapped.map((k, v) => MapEntry(k.toString(), v)),
+            );
+          }
+        } catch (_) {}
         return null;
       }
 
@@ -137,12 +203,12 @@ class FirestoreService {
         newScorersB.add(scorerEntry);
       }
 
-      tx.update(matchRef, {
+      tx.update(matchRef, _sanitizeFirestoreMap({
         'scoreA': newScoreA,
         'scoreB': newScoreB,
         'scorersA': newScorersA,
         'scorersB': newScorersB,
-      });
+      }));
 
       // Update player stats by name (same pattern already used elsewhere).
       final playersQuery = await _db
@@ -154,9 +220,9 @@ class FirestoreService {
         final pData = pDoc.data();
         final currentPoints = _safeInt(pData['points'], fallback: 0);
 
-        tx.update(pDoc.reference, {
+        tx.update(pDoc.reference, _sanitizeFirestoreMap({
           'points': currentPoints + pts,
-        });
+        }));
       }
     });
   }
@@ -172,9 +238,9 @@ class FirestoreService {
     final matchRef = _db.collection('matches').doc(matchId);
 
     await _db.runTransaction((tx) async {
-      tx.update(matchRef, {
+      tx.update(matchRef, _sanitizeFirestoreMap({
         isTeamA ? 'mvpA' : 'mvpB': name,
-      });
+      }));
 
       final playersQuery = await _db
           .collection('players')
@@ -184,9 +250,9 @@ class FirestoreService {
       for (final pDoc in playersQuery.docs) {
         final pData = pDoc.data();
         final current = _safeInt(pData['mvps'], fallback: 0);
-        tx.update(pDoc.reference, {
+        tx.update(pDoc.reference, _sanitizeFirestoreMap({
           'mvps': current + 1,
-        });
+        }));
       }
     });
   }
@@ -292,4 +358,3 @@ class FirestoreService {
     print("MIGRACION COMPLETA");
   }
 }
-
