@@ -111,12 +111,25 @@ class FirestoreService {
         'createdAt': FieldValue.serverTimestamp(),
       };
 
-      final newScorersA = List<Map<String, dynamic>>.from(
-        existingScorersA.map((e) => (e as Map).cast<String, dynamic>()),
-      );
-      final newScorersB = List<Map<String, dynamic>>.from(
-        existingScorersB.map((e) => (e as Map).cast<String, dynamic>()),
-      );
+      Map<String, dynamic>? normalizeScorerEntry(dynamic e) {
+        if (e is Map) return e.cast<String, dynamic>();
+        if (e is String && e.trim().isNotEmpty) {
+          return {
+            'name': e.trim(),
+            'points': 0,
+          };
+        }
+        return null;
+      }
+
+      final newScorersA = existingScorersA
+          .map(normalizeScorerEntry)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final newScorersB = existingScorersB
+          .map(normalizeScorerEntry)
+          .whereType<Map<String, dynamic>>()
+          .toList();
 
       if (isTeamA) {
         newScorersA.add(scorerEntry);
@@ -140,11 +153,9 @@ class FirestoreService {
       for (final pDoc in playersQuery.docs) {
         final pData = pDoc.data();
         final currentPoints = _safeInt(pData['points'], fallback: 0);
-        final currentMatchesPlayed = _safeInt(pData['matchesPlayed'], fallback: 0);
 
         tx.update(pDoc.reference, {
           'points': currentPoints + pts,
-          'matchesPlayed': currentMatchesPlayed + 1,
         });
       }
     });
@@ -229,9 +240,21 @@ class FirestoreService {
       });
     }
 
-    // Keep match-level MVP fields consistent (no player stat increments here).
-    // This method intentionally does NOT modify players.
-    // Variables kept to match signature / future-proofing.
+
+    final allPlayers = await _db.collection('players').get();
+    final teamPlayers = allPlayers.docs.where((pDoc) {
+      final pData = pDoc.data();
+      final pTeam = (pData['team'] ?? '').toString();
+      return pTeam == teamA || pTeam == teamB;
+    });
+
+    for (final pDoc in teamPlayers) {
+      final pData = pDoc.data();
+      final currentMatchesPlayed = _safeInt(pData['matchesPlayed'], fallback: 0);
+      await pDoc.reference.update({
+        'matchesPlayed': currentMatchesPlayed + 1,
+      });
+    }
 
   }
 
